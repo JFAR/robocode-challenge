@@ -21,14 +21,15 @@ public class JafarBot extends AdvancedRobot {
     private static final int numberOfEnemyVelocitiesToConsider = 400;
     static double enemyVelocities[][] = new double[numberOfEnemyVelocitiesToConsider][4];
     private static int count = 0;
-    private final double direction = 1;
+    private double direction = 1;
     private int currentEnemyVelocity;
     private long oldTime;
     private boolean fired;
     private int aimingEnemyVelocity;
-    private int averageCount;
-    private int velocityToAimAt;
+
     private double oldEnemyHeading;
+    private int bulletsHitEnemy = 1;
+    private int firedBullets = 1;
 
     @Override
     public void run() {
@@ -89,7 +90,7 @@ public class JafarBot extends AdvancedRobot {
 
             e.getEnergy();
 
-            // find our which velocity segment our enemy is at right now
+            // find out which velocity segment our enemy is at right now
             if (e.getVelocity() < -2) {
                 currentEnemyVelocity = 0;
             } else if (e.getVelocity() > 2) {
@@ -105,7 +106,8 @@ public class JafarBot extends AdvancedRobot {
             // update the one we are using to determine where to store our velocities if we have fired and there has been enough time for a bullet to
             // reach an enemy
             // (only a rough approximation of bullet travel time);
-            if (getTime() - oldTime > e.getDistance() / 12.8 && fired == true) {
+            double distanceToEnemy = e.getDistance();
+            if (getTime() - oldTime > distanceToEnemy / 12.8 && fired == true) {
                 aimingEnemyVelocity = currentEnemyVelocity;
             } else {
                 fired = false;
@@ -119,8 +121,8 @@ public class JafarBot extends AdvancedRobot {
             }
 
             // calculate our average velocity for our current segment
-            averageCount = 0;
-            velocityToAimAt = 0;
+            int averageCount = 0;
+            int velocityToAimAt = 0;
             while (averageCount < numberOfEnemyVelocitiesToConsider) {
                 velocityToAimAt += enemyVelocities[averageCount][currentEnemyVelocity];
                 averageCount++;
@@ -132,14 +134,14 @@ public class JafarBot extends AdvancedRobot {
 
             double myX = getX();
             double myY = getY();
-            double enemyX = getX() + e.getDistance() * Math.sin(absBearing);
-            double enemyY = getY() + e.getDistance() * Math.cos(absBearing);
+            double enemyX = getX() + distanceToEnemy * Math.sin(absBearing);
+            double enemyY = getY() + distanceToEnemy * Math.cos(absBearing);
             double enemyHeading = e.getHeadingRadians();
             double enemyHeadingChange = enemyHeading - oldEnemyHeading;
             oldEnemyHeading = enemyHeading;
             double deltaTime = 0;
-            double battleFieldHeight = getBattleFieldHeight(),
-                    battleFieldWidth = getBattleFieldWidth();
+            double battleFieldHeight = getBattleFieldHeight();
+            double battleFieldWidth = getBattleFieldWidth();
             double predictedX = enemyX, predictedY = enemyY;
             while ((++deltaTime) * (20.0 - 3.0 * bulletPower) < Point2D.Double.distance(myX, myY, predictedX, predictedY)) {
                 predictedX += Math.sin(enemyHeading) * velocityToAimAt;
@@ -147,28 +149,21 @@ public class JafarBot extends AdvancedRobot {
                 enemyHeading += enemyHeadingChange;
                 g.setColor(Color.red);
                 g.fillOval((int) predictedX - 2, (int) predictedY - 2, 4, 4);
-                if (predictedX < 18.0
-                        || predictedY < 18.0
-                        || predictedX > battleFieldWidth - 18.0
-                        || predictedY > battleFieldHeight - 18.0) {
+                if (predictedX < 18.0 || predictedY < 18.0 || predictedX > battleFieldWidth - 18.0 || predictedY > battleFieldHeight - 18.0) {
 
-                    predictedX = Math.min(Math.max(18.0, predictedX),
-                            battleFieldWidth - 18.0);
-                    predictedY = Math.min(Math.max(18.0, predictedY),
-                            battleFieldHeight - 18.0);
+                    predictedX = Math.min(Math.max(18.0, predictedX), battleFieldWidth - 18.0);
+                    predictedY = Math.min(Math.max(18.0, predictedY), battleFieldHeight - 18.0);
                     break;
                 }
             }
-            double theta = Utils.normalAbsoluteAngle(Math.atan2(
-                    predictedX - getX(), predictedY - getY()));
+            double theta = Utils.normalAbsoluteAngle(Math.atan2(predictedX - getX(), predictedY - getY()));
 
-            setTurnRadarRightRadians(Utils.normalRelativeAngle(
-                    absBearing - getRadarHeadingRadians()) * 2);
-            setTurnGunRightRadians(Utils.normalRelativeAngle(
-                    theta - getGunHeadingRadians()));
-            if (getGunHeat() == 0) {
+            setTurnRadarRightRadians(Utils.normalRelativeAngle(absBearing - getRadarHeadingRadians()) * 2);
+            setTurnGunRightRadians(Utils.normalRelativeAngle(theta - getGunHeadingRadians()));
+            if ((getGunHeat() == 0) && shouldFireBullet(distanceToEnemy)) {
                 fire(bulletPower(enemyEnergy));
                 fired = true;
+                firedBullets++;
             }
 
         } catch (RuntimeException re) {
@@ -176,9 +171,12 @@ public class JafarBot extends AdvancedRobot {
         }
     }
 
+    private boolean shouldFireBullet(double distanceToEnemy) {
+        return (distanceToEnemy < 100) || (firedBullets / bulletsHitEnemy > 0.05);
+    }
+
     private double bulletPower(double enemyEnergy) {
-        double bulletPower = Math.min(2.4, Math.min(enemyEnergy / 4, getEnergy() / 10));
-        return bulletPower;
+        return Math.min(2.4, Math.min(enemyEnergy / 4, getEnergy() / 10));
     }
 
 
@@ -197,7 +195,7 @@ public class JafarBot extends AdvancedRobot {
     @Override
     public void onHitByBullet(HitByBulletEvent e) {
         try {
-
+            direction *= -1;
         } catch (RuntimeException re) {
             System.out.println(re);
         }
@@ -208,6 +206,7 @@ public class JafarBot extends AdvancedRobot {
     @Override
     public void onBulletHit(BulletHitEvent e) {
         try {
+            bulletsHitEnemy++;
 
         } catch (RuntimeException re) {
             System.out.println(re);
@@ -260,7 +259,5 @@ public class JafarBot extends AdvancedRobot {
     public void onSkippedTurn(SkippedTurnEvent e) {
         System.out.println("TURN SKIP : " + e.getTime());
     }
-
-
 
 }
