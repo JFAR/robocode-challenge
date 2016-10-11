@@ -26,7 +26,7 @@ public class JafarBot extends AdvancedRobot {
     private long oldTime;
     private boolean fired;
     private int aimingEnemyVelocity;
-    private double[][] enemyVelocities;
+    static double enemyVelocities[][] = new double[400][4];
     private int averageCount;
     private int velocityToAimAt;
     private double oldEnemyHeading;
