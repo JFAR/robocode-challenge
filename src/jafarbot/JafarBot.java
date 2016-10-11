@@ -18,15 +18,14 @@ import robocode.util.Utils;
 
 public class JafarBot extends AdvancedRobot {
 
+    private static final int numberOfEnemyVelocitiesToConsider = 400;
+    static double enemyVelocities[][] = new double[numberOfEnemyVelocitiesToConsider][4];
     private static int count = 0;
-    private double turn = 2;
     private final double direction = 1;
-    private double oldEnergy = 100;
     private int currentEnemyVelocity;
     private long oldTime;
     private boolean fired;
     private int aimingEnemyVelocity;
-    static double enemyVelocities[][] = new double[400][4];
     private int averageCount;
     private int velocityToAimAt;
     private double oldEnemyHeading;
@@ -71,17 +70,13 @@ public class JafarBot extends AdvancedRobot {
             Graphics2D g = getGraphics();
 
             // increase our turn speed amount each tick,to a maximum of 8 and a minimum of 4
-            turn += 0.2 * Math.random();
-            if (turn > 8) {
-                turn = 2;
-            }
 
             double goalDirection = absBearing - Math.PI / 2 * direction;
             Rectangle2D fieldRect = new Rectangle2D.Double(18, 18, getBattleFieldWidth() - 36,
                     getBattleFieldHeight() - 36);
             while (!fieldRect.contains(getX() + Math.sin(goalDirection) * 120, getY() +
                     Math.cos(goalDirection) * 120)) {
-                goalDirection += direction * .1; // turn a little toward enemy and try again
+                goalDirection += direction * 0.1; // turn a little toward enemy and try again
             }
 
             double turn = robocode.util.Utils.normalRelativeAngle(goalDirection - getHeadingRadians());
@@ -92,7 +87,7 @@ public class JafarBot extends AdvancedRobot {
                 setAhead(100);
             setTurnRightRadians(turn);
 
-            oldEnergy = e.getEnergy();
+            e.getEnergy();
 
             // find our which velocity segment our enemy is at right now
             if (e.getVelocity() < -2) {
@@ -119,20 +114,22 @@ public class JafarBot extends AdvancedRobot {
             // record a new enemy velocity and raise the count
             enemyVelocities[count][aimingEnemyVelocity] = e.getVelocity();
             count++;
-            if (count == 400) {
+            if (count == numberOfEnemyVelocitiesToConsider) {
                 count = 0;
             }
 
             // calculate our average velocity for our current segment
             averageCount = 0;
             velocityToAimAt = 0;
-            while (averageCount < 400) {
+            while (averageCount < numberOfEnemyVelocitiesToConsider) {
                 velocityToAimAt += enemyVelocities[averageCount][currentEnemyVelocity];
                 averageCount++;
             }
-            velocityToAimAt /= 400;
+            velocityToAimAt /= numberOfEnemyVelocitiesToConsider;
 
-            double bulletPower = Math.min(2.4, Math.min(e.getEnergy() / 4, getEnergy() / 10));
+            double enemyEnergy = e.getEnergy();
+            double bulletPower = bulletPower(enemyEnergy);
+
             double myX = getX();
             double myY = getY();
             double enemyX = getX() + e.getDistance() * Math.sin(absBearing);
@@ -170,13 +167,18 @@ public class JafarBot extends AdvancedRobot {
             setTurnGunRightRadians(Utils.normalRelativeAngle(
                     theta - getGunHeadingRadians()));
             if (getGunHeat() == 0) {
-                fire(bulletPower);
+                fire(bulletPower(enemyEnergy));
                 fired = true;
             }
 
         } catch (RuntimeException re) {
             System.out.println(re);
         }
+    }
+
+    private double bulletPower(double enemyEnergy) {
+        double bulletPower = Math.min(2.4, Math.min(enemyEnergy / 4, getEnergy() / 10));
+        return bulletPower;
     }
 
 
