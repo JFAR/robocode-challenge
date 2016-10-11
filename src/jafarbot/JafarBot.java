@@ -1,3 +1,4 @@
+package jafarbot;
 import robocode.AdvancedRobot;
 import robocode.BulletHitBulletEvent;
 import robocode.BulletHitEvent;
@@ -11,7 +12,7 @@ import robocode.WinEvent;
 
 import java.awt.*;
 
-public class RobotTemplate extends AdvancedRobot {
+public class JafarBot extends AdvancedRobot {
 
     public void run() {
         try {
