@@ -18,6 +18,7 @@ import robocode.util.Utils;
 
 public class JafarBot extends AdvancedRobot {
 
+    private static final double maxSpeed = 12.8;
     private static final int numberOfEnemyVelocitiesToConsider = 400;
     static double enemyVelocities[][] = new double[numberOfEnemyVelocitiesToConsider][4];
     private static int count = 0;
@@ -30,6 +31,7 @@ public class JafarBot extends AdvancedRobot {
     private double oldEnemyHeading;
     private int bulletsHitEnemy = 1;
     private int firedBullets = 1;
+    private String currentEnemy;
 
     @Override
     public void run() {
@@ -41,7 +43,7 @@ public class JafarBot extends AdvancedRobot {
             setAdjustRadarForGunTurn(true);
 
             while (true) {
-                //Add your execute methods here
+                // Turn Radar as fast as possible to generate lots of onScannedRobot events
                 turnRadarRightRadians(Double.POSITIVE_INFINITY);
                 execute();
             }
@@ -68,107 +70,120 @@ public class JafarBot extends AdvancedRobot {
         try {
 
             double absBearing = e.getBearingRadians() + getHeadingRadians();
-            Graphics2D g = getGraphics();
-
-            // increase our turn speed amount each tick,to a maximum of 8 and a minimum of 4
-
-            double goalDirection = absBearing - Math.PI / 2 * direction;
-            Rectangle2D fieldRect = new Rectangle2D.Double(18, 18, getBattleFieldWidth() - 36,
-                    getBattleFieldHeight() - 36);
-            while (!fieldRect.contains(getX() + Math.sin(goalDirection) * 120, getY() +
-                    Math.cos(goalDirection) * 120)) {
-                goalDirection += direction * 0.1; // turn a little toward enemy and try again
-            }
-
-            double turn = robocode.util.Utils.normalRelativeAngle(goalDirection - getHeadingRadians());
-            if (Math.abs(turn) > Math.PI / 2) {
-                turn = robocode.util.Utils.normalRelativeAngle(turn + Math.PI);
-                setBack(100);
-            } else
-                setAhead(100);
-            setTurnRightRadians(turn);
-
-            e.getEnergy();
+            setRobotMovement(absBearing);
 
             // find out which velocity segment our enemy is at right now
-            if (e.getVelocity() < -2) {
-                currentEnemyVelocity = 0;
-            } else if (e.getVelocity() > 2) {
-                currentEnemyVelocity = 1;
-            } else if (e.getVelocity() <= 2 && e.getVelocity() >= -2) {
-                if (currentEnemyVelocity == 0) {
-                    currentEnemyVelocity = 2;
-                } else if (currentEnemyVelocity == 1) {
-                    currentEnemyVelocity = 3;
-                }
-            }
+            double enemyRobotVelocity = e.getVelocity();
+            determineEnemyVelocitySegment(enemyRobotVelocity);
 
             // update the one we are using to determine where to store our velocities if we have fired and there has been enough time for a bullet to
             // reach an enemy
             // (only a rough approximation of bullet travel time);
             double distanceToEnemy = e.getDistance();
-            if (getTime() - oldTime > distanceToEnemy / 12.8 && fired == true) {
+            if (getTime() - oldTime > distanceToEnemy / maxSpeed && fired == true) {
                 aimingEnemyVelocity = currentEnemyVelocity;
             } else {
                 fired = false;
             }
 
             // record a new enemy velocity and raise the count
-            enemyVelocities[count][aimingEnemyVelocity] = e.getVelocity();
-            count++;
-            if (count == numberOfEnemyVelocitiesToConsider) {
-                count = 0;
-            }
+            recordEnemyVelocity(enemyRobotVelocity);
 
             // calculate our average velocity for our current segment
-            int averageCount = 0;
-            int velocityToAimAt = 0;
-            while (averageCount < numberOfEnemyVelocitiesToConsider) {
-                velocityToAimAt += enemyVelocities[averageCount][currentEnemyVelocity];
-                averageCount++;
-            }
-            velocityToAimAt /= numberOfEnemyVelocitiesToConsider;
-
-            double enemyEnergy = e.getEnergy();
-            double bulletPower = bulletPower(enemyEnergy);
-
-            double myX = getX();
-            double myY = getY();
-            double enemyX = getX() + distanceToEnemy * Math.sin(absBearing);
-            double enemyY = getY() + distanceToEnemy * Math.cos(absBearing);
-            double enemyHeading = e.getHeadingRadians();
-            double enemyHeadingChange = enemyHeading - oldEnemyHeading;
-            oldEnemyHeading = enemyHeading;
-            double deltaTime = 0;
-            double battleFieldHeight = getBattleFieldHeight();
-            double battleFieldWidth = getBattleFieldWidth();
-            double predictedX = enemyX, predictedY = enemyY;
-            while ((++deltaTime) * (20.0 - 3.0 * bulletPower) < Point2D.Double.distance(myX, myY, predictedX, predictedY)) {
-                predictedX += Math.sin(enemyHeading) * velocityToAimAt;
-                predictedY += Math.cos(enemyHeading) * velocityToAimAt;
-                enemyHeading += enemyHeadingChange;
-                g.setColor(Color.red);
-                g.fillOval((int) predictedX - 2, (int) predictedY - 2, 4, 4);
-                if (predictedX < 18.0 || predictedY < 18.0 || predictedX > battleFieldWidth - 18.0 || predictedY > battleFieldHeight - 18.0) {
-
-                    predictedX = Math.min(Math.max(18.0, predictedX), battleFieldWidth - 18.0);
-                    predictedY = Math.min(Math.max(18.0, predictedY), battleFieldHeight - 18.0);
-                    break;
-                }
-            }
-            double theta = Utils.normalAbsoluteAngle(Math.atan2(predictedX - getX(), predictedY - getY()));
-
-            setTurnRadarRightRadians(Utils.normalRelativeAngle(absBearing - getRadarHeadingRadians()) * 2);
-            setTurnGunRightRadians(Utils.normalRelativeAngle(theta - getGunHeadingRadians()));
-            if ((getGunHeat() == 0) && shouldFireBullet(distanceToEnemy)) {
-                fire(bulletPower(enemyEnergy));
-                fired = true;
-                firedBullets++;
-            }
+            moveGunTurretToEnemy(absBearing, distanceToEnemy, getVelocityToAimAt(), bulletPower(e.getEnergy()), e.getHeadingRadians());
+            fireBullet(distanceToEnemy, e.getEnergy());
 
         } catch (RuntimeException re) {
             System.out.println(re);
         }
+    }
+
+    private void moveGunTurretToEnemy(double absBearing, double distanceToEnemy, int velocityToAimAt, double bulletPower, double enemyHeading) {
+        Graphics2D g = getGraphics();
+        double myX = getX();
+        double myY = getY();
+        double enemyX = getX() + distanceToEnemy * Math.sin(absBearing);
+        double enemyY = getY() + distanceToEnemy * Math.cos(absBearing);
+        double enemyHeadingChange = enemyHeading - oldEnemyHeading;
+        oldEnemyHeading = enemyHeading;
+        double deltaTime = 0;
+        double battleFieldHeight = getBattleFieldHeight();
+        double battleFieldWidth = getBattleFieldWidth();
+        double predictedX = enemyX, predictedY = enemyY;
+        while ((++deltaTime) * (20.0 - 3.0 * bulletPower) < Point2D.Double.distance(myX, myY, predictedX, predictedY)) {
+            predictedX += Math.sin(enemyHeading) * velocityToAimAt;
+            predictedY += Math.cos(enemyHeading) * velocityToAimAt;
+            enemyHeading += enemyHeadingChange;
+            g.setColor(Color.red);
+            g.fillOval((int) predictedX - 2, (int) predictedY - 2, 4, 4);
+            if (predictedX < 18.0 || predictedY < 18.0 || predictedX > battleFieldWidth - 18.0 || predictedY > battleFieldHeight - 18.0) {
+
+                predictedX = Math.min(Math.max(18.0, predictedX), battleFieldWidth - 18.0);
+                predictedY = Math.min(Math.max(18.0, predictedY), battleFieldHeight - 18.0);
+                break;
+            }
+        }
+        double theta = Utils.normalAbsoluteAngle(Math.atan2(predictedX - getX(), predictedY - getY()));
+
+        setTurnRadarRightRadians(Utils.normalRelativeAngle(absBearing - getRadarHeadingRadians()) * 2);
+        setTurnGunRightRadians(Utils.normalRelativeAngle(theta - getGunHeadingRadians()));
+    }
+
+    private void fireBullet(double distanceToEnemy, double enemyEnergy) {
+        if ((getGunHeat() == 0) && shouldFireBullet(distanceToEnemy)) {
+            fire(bulletPower(enemyEnergy));
+            fired = true;
+            firedBullets++;
+        }
+    }
+
+    private int getVelocityToAimAt() {
+        int averageCount = 0;
+        int sumOfRecordedVelocitiesForVelocitySegment = 0;
+        while (averageCount < numberOfEnemyVelocitiesToConsider) {
+            sumOfRecordedVelocitiesForVelocitySegment += enemyVelocities[averageCount][currentEnemyVelocity];
+            averageCount++;
+        }
+        return sumOfRecordedVelocitiesForVelocitySegment / numberOfEnemyVelocitiesToConsider;
+    }
+
+    private void recordEnemyVelocity(double enemyRobotVelocity) {
+        enemyVelocities[count][aimingEnemyVelocity] = enemyRobotVelocity;
+        count++;
+        if (count == numberOfEnemyVelocitiesToConsider) {
+            count = 0;
+        }
+    }
+
+    private void determineEnemyVelocitySegment(double enemyRobotVelocity) {
+        if (enemyRobotVelocity < -2) {
+            currentEnemyVelocity = 0;
+        } else if (enemyRobotVelocity > 2) {
+            currentEnemyVelocity = 1;
+        } else if (enemyRobotVelocity <= 2 && enemyRobotVelocity >= -2) {
+            if (currentEnemyVelocity == 0) {
+                currentEnemyVelocity = 2;
+            } else if (currentEnemyVelocity == 1) {
+                currentEnemyVelocity = 3;
+            }
+        }
+    }
+
+    private void setRobotMovement(double absBearing) {
+        double goalDirection = absBearing - Math.PI / 2 * direction;
+        Rectangle2D fieldRect = new Rectangle2D.Double(18, 18, getBattleFieldWidth() - 36, getBattleFieldHeight() - 36);
+        while (!fieldRect.contains(getX() + Math.sin(goalDirection) * 120, getY() + Math.cos(goalDirection) * 120)) {
+            goalDirection += direction * 0.1; // turn a little toward enemy and try again
+        }
+
+        double turn = robocode.util.Utils.normalRelativeAngle(goalDirection - getHeadingRadians());
+        if (Math.abs(turn) > Math.PI / 2) {
+            turn = robocode.util.Utils.normalRelativeAngle(turn + Math.PI);
+            setBack(100);
+        } else {
+            setAhead(100);
+        }
+        setTurnRightRadians(turn);
     }
 
     private boolean shouldFireBullet(double distanceToEnemy) {
