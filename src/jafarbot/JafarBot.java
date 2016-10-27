@@ -31,7 +31,6 @@ public class JafarBot extends AdvancedRobot {
     private double oldEnemyHeading;
     private int bulletsHitEnemy = 1;
     private int firedBullets = 1;
-    private String currentEnemy;
 
     @Override
     public void run() {
